@@ -9,14 +9,14 @@ import (
 
 type Engine interface {
 	Enqueue(task *Task) error
-	Fetch() *Task
+	Fetch(opts FetchOptions) *Task
 
 	Ack(task *Task) error
 	Fail(task *Task, err error) error
 }
 
 type EngineImpl struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	tasks     map[uint32]*Task
 	completed []*Task
@@ -28,8 +28,31 @@ type EngineImpl struct {
 	dlq        []*Task
 }
 
-func (engine *EngineImpl) Enqueue(task *Task) error { return nil }
-func (engine *EngineImpl) Fetch() *Task             { return nil }
+func (engine *EngineImpl) Enqueue(task *Task) error {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	// TODO: Idempotency logic
+	heap.Push(&engine.scheduled, task)
+
+	return nil
+}
+func (engine *EngineImpl) Fetch(opts FetchOptions) *Task {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	if len(engine.ready) == 0 {
+		return nil
+	}
+
+	task := engine.ready[0]
+	engine.ready = engine.ready[1:]
+
+	lease := NewLease(opts.WorkerID, task.ID, opts.TaskTime)
+	engine.processing[task.ID] = lease
+
+	return task
+}
 
 func (engine *EngineImpl) Ack(task *Task) error {
 	engine.mu.Lock()
@@ -81,6 +104,9 @@ func NewEngine() Engine {
 		scheduled:  ScheduleHeap{},
 	}
 	heap.Init(&engine.scheduled)
+
+	go engine.Reaper()
+	go engine.Scheduler()
 
 	return engine
 }

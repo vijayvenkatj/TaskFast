@@ -16,3 +16,8 @@ type Lease struct {
 	TaskID     uint32
 	LeaseUntil time.Time
 }
+
+type FetchOptions struct {
+	WorkerID uint32
+	TaskTime time.Duration
+}
