@@ -13,6 +13,8 @@ type Engine interface {
 
 	Ack(task *Task) error
 	Fail(task *Task, err error) error
+
+	DLQ() []Task
 }
 
 type EngineImpl struct {
@@ -89,6 +91,14 @@ func (engine *EngineImpl) Fail(task *Task, err error) error {
 	heap.Push(&engine.scheduled, task)
 
 	return nil
+}
+
+func (engine *EngineImpl) DLQ() []Task {
+	var deadTasks []Task
+	for _, task := range engine.dlq {
+		deadTasks = append(deadTasks, *task)
+	}
+	return deadTasks
 }
 
 // Constructor for our Engine

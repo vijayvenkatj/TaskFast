@@ -34,6 +34,7 @@ func (handler *Handler) EnqueueTaskHandler(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusCreated, EnqueueResponse{Message: "task enqueued"})
 }
+
 func (handler *Handler) FetchTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	var request FetchRequest
@@ -52,6 +53,15 @@ func (handler *Handler) FetchTaskHandler(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusCreated, FetchResponse{*task})
 }
+
+func (handler *Handler) DLQHandler(w http.ResponseWriter, r *http.Request) {
+	dead_tasks := handler.Engine.DLQ()
+	writeJSON(w, http.StatusAccepted, DLQResponse{
+		DeadTasks: dead_tasks,
+	})
+}
+
+// Helpers
 
 func writeJSON(w http.ResponseWriter, status int, resp any) {
 	w.Header().Set("Content-Type", "application/json")

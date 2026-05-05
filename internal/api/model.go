@@ -24,3 +24,9 @@ type FetchRequest struct {
 type FetchResponse struct {
 	Task engine.Task `json:"task"`
 }
+
+type DLQRequest struct {
+}
+type DLQResponse struct {
+	DeadTasks []engine.Task `json:"dead_tasks"`
+}

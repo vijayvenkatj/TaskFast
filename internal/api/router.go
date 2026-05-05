@@ -7,6 +7,7 @@ func NewRouter(handler *Handler) *http.ServeMux {
 
 	mux.HandleFunc("POST /api/enqueue", handler.EnqueueTaskHandler)
 	mux.HandleFunc("POST /api/fetch", handler.FetchTaskHandler)
+	mux.HandleFunc("GET /api/dlq", handler.DLQHandler)
 
 	return mux
 }
