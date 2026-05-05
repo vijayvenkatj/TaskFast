@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log"
 	"net/http"
+
+	"github.com/vijayvenkatj/taskfast/internal/engine"
 )
 
 type Server struct {
@@ -12,7 +14,8 @@ type Server struct {
 
 func NewServer(addr string) *Server {
 
-	handler := NewHandler()
+	engine := engine.NewEngine()
+	handler := NewHandler(engine)
 	router := NewRouter(handler)
 
 	return &Server{
