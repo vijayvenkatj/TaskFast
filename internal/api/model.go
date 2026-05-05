@@ -30,3 +30,18 @@ type DLQRequest struct {
 type DLQResponse struct {
 	DeadTasks []engine.Task `json:"dead_tasks"`
 }
+
+type AckRequest struct {
+	Task engine.Task `json:"task"`
+}
+type AckResponse struct {
+	Message string `json:"message"`
+}
+
+type FailRequest struct {
+	Task  engine.Task `json:"task"`
+	Error string      `json:"error"`
+}
+type FailResponse struct {
+	Message string `json:"message"`
+}

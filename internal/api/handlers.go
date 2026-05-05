@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/vijayvenkatj/taskfast/internal/engine"
@@ -59,6 +60,40 @@ func (handler *Handler) DLQHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, DLQResponse{
 		DeadTasks: dead_tasks,
 	})
+}
+
+func (handler *Handler) AckHandler(w http.ResponseWriter, r *http.Request) {
+	var request AckRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResp{Error: "bad request"})
+		return
+	}
+
+	err = handler.Engine.Ack(&request.Task)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AckResponse{Message: "task acknowledged"})
+}
+
+func (handler *Handler) FailHandler(w http.ResponseWriter, r *http.Request) {
+	var request FailRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResp{Error: "bad request"})
+		return
+	}
+
+	err = handler.Engine.Fail(&request.Task, errors.New(request.Error))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, FailResponse{Message: "task failed"})
 }
 
 // Helpers
