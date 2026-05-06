@@ -51,6 +51,12 @@ func (handler *Handler) FetchTaskHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	task := handler.Engine.Fetch(fetchOptions)
+	if task == nil {
+		writeJSON(w, http.StatusNotFound, ErrorResp{
+			Error: "no tasks found!",
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusCreated, FetchResponse{*task})
 }

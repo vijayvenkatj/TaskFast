@@ -8,25 +8,32 @@ import (
 // Reaper -> checks for expired leases.
 func (engine *EngineImpl) Reaper() {
 	for {
+		engine.mu.Lock()
 		for taskID, lease := range engine.processing {
-			task := engine.tasks[taskID]
+			taskMeta := engine.tasks[taskID]
+			if taskMeta == nil {
+				delete(engine.processing, taskID)
+				continue
+			}
 
 			if time.Now().After(lease.LeaseUntil) {
 				// Remove it from processing.
 				delete(engine.processing, taskID)
 
 				// Add the Task back to delayed or DLQ based on retries.
-				if task.Retries >= task.MaxRetries {
-					engine.dlq = append(engine.dlq, task)
+				if taskMeta.Retries >= taskMeta.MaxRetries {
+					engine.dlq = append(engine.dlq, taskMeta.Task)
 					continue
 				}
 
-				backoff := Backoff(50*time.Millisecond, task.Retries)
-				task.RunAt = time.Now().Add(backoff)
+				backoff := Backoff(50*time.Millisecond, taskMeta.Retries)
+				taskMeta.Task.RunAt = time.Now().Add(backoff)
+				taskMeta.Retries += 1
 
-				heap.Push(&engine.scheduled, task)
+				heap.Push(&engine.scheduled, taskMeta.Task)
 			}
 		}
+		engine.mu.Unlock()
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -50,6 +57,8 @@ func (engine *EngineImpl) Scheduler() {
 			time.Sleep(sleep)
 			continue
 		}
+
+		engine.mu.RUnlock()
 
 		engine.mu.Lock()
 		for engine.scheduled.Len() > 0 && !engine.scheduled[0].RunAt.After(now) {

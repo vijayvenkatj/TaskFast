@@ -4,9 +4,12 @@ import "time"
 
 // Task - User provided JOB
 type Task struct {
-	ID         uint32
-	Payload    []byte
-	RunAt      time.Time
+	ID      uint32
+	Payload []byte
+	RunAt   time.Time
+}
+type TaskMeta struct {
+	Task       *Task
 	MaxRetries uint32
 	Retries    uint32
 }

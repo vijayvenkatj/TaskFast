@@ -20,7 +20,7 @@ type Engine interface {
 type EngineImpl struct {
 	mu sync.RWMutex
 
-	tasks     map[uint32]*Task
+	tasks     map[uint32]*TaskMeta
 	completed []*Task
 
 	// Queues
@@ -35,7 +35,13 @@ func (engine *EngineImpl) Enqueue(task *Task) error {
 	defer engine.mu.Unlock()
 
 	// TODO: Idempotency logic
+	engine.tasks[task.ID] = &TaskMeta{
+		Task:       task,
+		Retries:    0,
+		MaxRetries: 1,
+	}
 	heap.Push(&engine.scheduled, task)
+	log.Println("Task", task.ID, "enqueued!")
 
 	return nil
 }
@@ -52,6 +58,7 @@ func (engine *EngineImpl) Fetch(opts FetchOptions) *Task {
 
 	lease := NewLease(opts.WorkerID, task.ID, opts.TaskTime)
 	engine.processing[task.ID] = lease
+	log.Println("Task", task.ID, "fetched!")
 
 	return task
 }
@@ -77,15 +84,18 @@ func (engine *EngineImpl) Fail(task *Task, err error) error {
 	delete(engine.processing, taskID)
 	log.Println("Task", taskID, "Failed: ", err.Error())
 
+	stored := engine.tasks[taskID]
+
 	// Add the Task back to delayed or DLQ based on retries.
-	if task.Retries >= task.MaxRetries {
+	if stored.Retries >= stored.MaxRetries {
 		log.Println("Task", taskID, "moved to DLQ")
 		engine.dlq = append(engine.dlq, task)
 		return nil
 	}
 
-	backoff := Backoff(50*time.Millisecond, task.Retries)
+	backoff := Backoff(50*time.Millisecond, stored.Retries)
 	task.RunAt = time.Now().Add(backoff)
+	stored.Retries += 1
 
 	log.Println("Task", taskID, "retried!")
 	heap.Push(&engine.scheduled, task)
@@ -104,7 +114,7 @@ func (engine *EngineImpl) DLQ() []Task {
 // Constructor for our Engine
 func NewEngine() Engine {
 	engine := &EngineImpl{
-		tasks: make(map[uint32]*Task),
+		tasks: make(map[uint32]*TaskMeta),
 
 		ready:     []*Task{},
 		completed: []*Task{},
