@@ -2,6 +2,7 @@ package engine
 
 import (
 	"container/heap"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ type EngineImpl struct {
 
 	tasks     map[uint32]*TaskMeta
 	completed []*Task
+	limit     uint32
 
 	// Queues
 	ready      []*Task
@@ -34,7 +36,10 @@ func (engine *EngineImpl) Enqueue(task *Task) error {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 
-	// TODO: Idempotency logic
+	if len(engine.ready)+len(engine.processing) > int(engine.limit) {
+		return errors.New("system overloaded!")
+	}
+
 	engine.tasks[task.ID] = &TaskMeta{
 		Task:       task,
 		Retries:    0,
@@ -115,6 +120,7 @@ func (engine *EngineImpl) DLQ() []Task {
 func NewEngine() Engine {
 	engine := &EngineImpl{
 		tasks: make(map[uint32]*TaskMeta),
+		limit: 100,
 
 		ready:     []*Task{},
 		completed: []*Task{},
