@@ -12,9 +12,9 @@ type Server struct {
 	HttpServer *http.Server
 }
 
-func NewServer(addr string) *Server {
+func NewServer(addr string, path string) *Server {
 
-	engine := engine.NewEngine()
+	engine := engine.NewEngine(path)
 	handler := NewHandler(engine)
 	router := NewRouter(handler)
 

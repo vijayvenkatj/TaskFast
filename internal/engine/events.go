@@ -5,25 +5,11 @@ import (
 	"errors"
 	"log"
 	"time"
+
+	"github.com/vijayvenkatj/taskfast/internal/model"
 )
 
-type EventType string
-
-const (
-	EnqueueEvent = "ENQUEUE"
-	FetchEvent   = "FETCH"
-	AckEvent     = "ACK"
-	FailEvent    = "FAIL"
-)
-
-type Event struct {
-	Type EventType
-	Task *TaskMeta
-	Opts *FetchOptions
-	Err  string
-}
-
-func (engine *EngineImpl) Apply(event *Event) error {
+func (engine *EngineImpl) Apply(event *model.Event) error {
 
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
@@ -45,7 +31,7 @@ func (engine *EngineImpl) Apply(event *Event) error {
 
 	switch event.Type {
 
-	case EnqueueEvent:
+	case model.EnqueueEvent:
 
 		// Backpressure
 		if len(engine.ready)+len(engine.processing) > int(engine.limit) {
@@ -61,7 +47,7 @@ func (engine *EngineImpl) Apply(event *Event) error {
 		heap.Push(&engine.scheduled, task)
 		log.Println("Task", task.ID, "enqueued!")
 
-	case FetchEvent:
+	case model.FetchEvent:
 
 		if len(engine.ready) == 0 {
 			return nil
@@ -74,13 +60,13 @@ func (engine *EngineImpl) Apply(event *Event) error {
 		engine.processing[task.ID] = lease
 		log.Println("Task", task.ID, "fetched!")
 
-	case AckEvent:
+	case model.AckEvent:
 		engine.completed = append(engine.completed, task)
 		delete(engine.processing, task.ID)
 
 		log.Println("Task", task.ID, "done!")
 
-	case FailEvent:
+	case model.FailEvent:
 
 		taskID := task.ID
 

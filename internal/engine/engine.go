@@ -6,6 +6,9 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/vijayvenkatj/taskfast/internal/storage"
+	wal "github.com/vijayvenkatj/taskfast/internal/storage"
 )
 
 type Engine interface {
@@ -30,6 +33,8 @@ type EngineImpl struct {
 	processing map[uint32]*Lease
 	scheduled  ScheduleHeap
 	dlq        []*Task
+
+	wal *storage.WAL
 }
 
 func (engine *EngineImpl) Enqueue(task *Task) error {
@@ -117,7 +122,14 @@ func (engine *EngineImpl) DLQ() []Task {
 }
 
 // Constructor for our Engine
-func NewEngine() Engine {
+func NewEngine(logPath string) Engine {
+
+	wal, err := wal.NewWAL(logPath)
+	if err != nil {
+		log.Println("ERROR creating WAL")
+		return nil
+	}
+
 	engine := &EngineImpl{
 		tasks: make(map[uint32]*TaskMeta),
 		limit: 100,
@@ -128,6 +140,8 @@ func NewEngine() Engine {
 
 		processing: make(map[uint32]*Lease),
 		scheduled:  ScheduleHeap{},
+
+		wal: wal,
 	}
 	heap.Init(&engine.scheduled)
 

@@ -1,4 +1,4 @@
-package wal
+package storage
 
 import (
 	"encoding/binary"
@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/vijayvenkatj/taskfast/internal/engine"
+	"github.com/vijayvenkatj/taskfast/internal/model"
 )
 
 type LogEntry struct {
-	Event engine.Event `json:"event"`
+	Event model.Event `json:"event"`
 }
 
 type WAL struct {
@@ -45,7 +45,7 @@ func NewWAL(path string) (*WAL, error) {
 	}, nil
 }
 
-func (w *WAL) Append(evt engine.Event) error {
+func (w *WAL) Append(evt model.Event) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -82,7 +82,7 @@ func (w *WAL) Append(evt engine.Event) error {
 	return nil
 }
 
-func (w *WAL) Replay() ([]engine.Event, error) {
+func (w *WAL) Replay() ([]model.Event, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -90,7 +90,7 @@ func (w *WAL) Replay() ([]engine.Event, error) {
 		return nil, err
 	}
 
-	events := make([]engine.Event, 0)
+	events := make([]model.Event, 0)
 
 	for {
 		var length uint32
