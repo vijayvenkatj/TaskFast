@@ -7,11 +7,8 @@ import (
 	"io"
 )
 
-// Format:
-//
-// [4-byte length][json bytes]
-
 func encode(e *LogEntry) ([]byte, error) {
+
 	payload, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
