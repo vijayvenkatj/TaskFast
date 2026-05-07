@@ -76,7 +76,7 @@ func (handler *Handler) AckHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = handler.Engine.Ack(&request.Task)
+	err = handler.Engine.Ack(request.TaskID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: err.Error()})
 		return
@@ -93,7 +93,7 @@ func (handler *Handler) FailHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = handler.Engine.Fail(&request.Task, errors.New(request.Error))
+	err = handler.Engine.Fail(request.TaskID, errors.New(request.Error))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: err.Error()})
 		return

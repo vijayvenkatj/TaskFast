@@ -9,7 +9,7 @@ import (
 	"github.com/vijayvenkatj/taskfast/internal/model"
 )
 
-func (engine *EngineImpl) Apply(event *model.Event) error {
+func (engine *EngineImpl) Apply(event *model.Event) (*Task, error) {
 
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
@@ -35,7 +35,7 @@ func (engine *EngineImpl) Apply(event *model.Event) error {
 
 		// Backpressure
 		if len(engine.ready)+len(engine.processing) > int(engine.limit) {
-			return errors.New("system overloaded!")
+			return nil, errors.New("system overloaded!")
 		}
 
 		// Push the task into scheduled queue
@@ -50,7 +50,7 @@ func (engine *EngineImpl) Apply(event *model.Event) error {
 	case model.FetchEvent:
 
 		if len(engine.ready) == 0 {
-			return nil
+			return nil, nil
 		}
 
 		task := engine.ready[0]
@@ -59,6 +59,8 @@ func (engine *EngineImpl) Apply(event *model.Event) error {
 		lease := NewLease(opts.WorkerID, task.ID, opts.TaskTime)
 		engine.processing[task.ID] = lease
 		log.Println("Task", task.ID, "fetched!")
+
+		return task, nil
 
 	case model.AckEvent:
 		engine.completed = append(engine.completed, task)
@@ -80,7 +82,7 @@ func (engine *EngineImpl) Apply(event *model.Event) error {
 		if stored.Retries >= stored.MaxRetries {
 			log.Println("Task", taskID, "moved to DLQ")
 			engine.dlq = append(engine.dlq, task)
-			return nil
+			return nil, nil
 		}
 
 		backoff := Backoff(50*time.Millisecond, stored.Retries)
@@ -92,8 +94,8 @@ func (engine *EngineImpl) Apply(event *model.Event) error {
 
 	default:
 		log.Println("Invalid EVENT")
-		return nil
+		return nil, nil
 	}
 
-	return nil
+	return nil, nil
 }

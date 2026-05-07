@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	server := api.NewServer(":8080")
+	server := api.NewServer(":8080", "./tmp/log")
 
 	log.Println("HTTP server listening on port :8080")
 	err := server.ListenAndServe()

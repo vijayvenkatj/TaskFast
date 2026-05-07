@@ -32,15 +32,15 @@ type DLQResponse struct {
 }
 
 type AckRequest struct {
-	Task engine.Task `json:"task"`
+	TaskID uint32 `json:"task_id"`
 }
 type AckResponse struct {
 	Message string `json:"message"`
 }
 
 type FailRequest struct {
-	Task  engine.Task `json:"task"`
-	Error string      `json:"error"`
+	TaskID uint32 `json:"task_id"`
+	Error  string `json:"error"`
 }
 type FailResponse struct {
 	Message string `json:"message"`

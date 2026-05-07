@@ -2,11 +2,10 @@ package engine
 
 import (
 	"container/heap"
-	"errors"
 	"log"
 	"sync"
-	"time"
 
+	"github.com/vijayvenkatj/taskfast/internal/model"
 	"github.com/vijayvenkatj/taskfast/internal/storage"
 	wal "github.com/vijayvenkatj/taskfast/internal/storage"
 )
@@ -15,8 +14,8 @@ type Engine interface {
 	Enqueue(task *Task) error
 	Fetch(opts FetchOptions) *Task
 
-	Ack(task *Task) error
-	Fail(task *Task, err error) error
+	Ack(taskID uint32) error
+	Fail(taskID uint32, err error) error
 
 	DLQ() []Task
 }
@@ -38,77 +37,91 @@ type EngineImpl struct {
 }
 
 func (engine *EngineImpl) Enqueue(task *Task) error {
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
-
-	if len(engine.ready)+len(engine.processing) > int(engine.limit) {
-		return errors.New("system overloaded!")
+	event := model.Event{
+		Type: model.EnqueueEvent,
+		Task: &TaskMeta{
+			Task:       task,
+			Retries:    0,
+			MaxRetries: 1,
+		},
+		Opts: nil,
+		Err:  "",
 	}
 
-	engine.tasks[task.ID] = &TaskMeta{
-		Task:       task,
-		Retries:    0,
-		MaxRetries: 1,
+	err := engine.wal.Append(event)
+	if err != nil {
+		return err
 	}
-	heap.Push(&engine.scheduled, task)
-	log.Println("Task", task.ID, "enqueued!")
+
+	_, err = engine.Apply(&event)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
-func (engine *EngineImpl) Fetch(opts FetchOptions) *Task {
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
 
-	if len(engine.ready) == 0 {
+func (engine *EngineImpl) Fetch(opts FetchOptions) *Task {
+	event := model.Event{
+		Type: model.FetchEvent,
+		Task: nil,
+		Opts: &opts,
+		Err:  "",
+	}
+
+	err := engine.wal.Append(event)
+	if err != nil {
 		return nil
 	}
 
-	task := engine.ready[0]
-	engine.ready = engine.ready[1:]
-
-	lease := NewLease(opts.WorkerID, task.ID, opts.TaskTime)
-	engine.processing[task.ID] = lease
-	log.Println("Task", task.ID, "fetched!")
+	task, err := engine.Apply(&event)
+	if err != nil {
+		return nil
+	}
 
 	return task
 }
 
-func (engine *EngineImpl) Ack(task *Task) error {
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
+func (engine *EngineImpl) Ack(taskID uint32) error {
 
-	engine.completed = append(engine.completed, task)
-	delete(engine.processing, task.ID)
+	event := model.Event{
+		Type: model.AckEvent,
+		Task: engine.tasks[taskID],
+		Opts: nil,
+		Err:  "",
+	}
 
-	log.Println("Task", task.ID, "done!")
+	err := engine.wal.Append(event)
+	if err != nil {
+		return err
+	}
+
+	_, err = engine.Apply(&event)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
-func (engine *EngineImpl) Fail(task *Task, err error) error {
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
 
-	taskID := task.ID
+func (engine *EngineImpl) Fail(taskID uint32, err error) error {
 
-	// Remove it from processing.
-	delete(engine.processing, taskID)
-	log.Println("Task", taskID, "Failed: ", err.Error())
-
-	stored := engine.tasks[taskID]
-
-	// Add the Task back to delayed or DLQ based on retries.
-	if stored.Retries >= stored.MaxRetries {
-		log.Println("Task", taskID, "moved to DLQ")
-		engine.dlq = append(engine.dlq, task)
-		return nil
+	event := model.Event{
+		Type: model.FailEvent,
+		Task: engine.tasks[taskID],
+		Opts: nil,
+		Err:  err.Error(),
 	}
 
-	backoff := Backoff(50*time.Millisecond, stored.Retries)
-	task.RunAt = time.Now().Add(backoff)
-	stored.Retries += 1
+	errr := engine.wal.Append(event)
+	if errr != nil {
+		return errr
+	}
 
-	log.Println("Task", taskID, "retried!")
-	heap.Push(&engine.scheduled, task)
+	_, errr = engine.Apply(&event)
+	if errr != nil {
+		return errr
+	}
 
 	return nil
 }
