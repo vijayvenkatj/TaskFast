@@ -8,13 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/vijayvenkatj/taskfast/internal/engine"
 )
 
 type LogEntry struct {
-	Term         uint32
-	LogIndex     uint32
-	Event        string
-	EventPayload []byte
+	Term     uint32
+	LogIndex uint32
+	Event    engine.Event
 }
 
 type WAL struct {
@@ -48,7 +49,10 @@ func (wal *WAL) Append(entry *LogEntry) error {
 	wal.mu.Lock()
 	defer wal.mu.Unlock()
 
-	data := encode(entry)
+	data, err := encode(entry)
+	if err != nil {
+		return err
+	}
 
 	n, err := wal.file.Write(data)
 	if err != nil {
@@ -176,7 +180,10 @@ func (wal *WAL) TruncateFrom(start uint32) error {
 	}
 
 	for _, entry := range wal.Entries {
-		data := encode(entry)
+		data, err := encode(entry)
+		if err != nil {
+			return err
+		}
 
 		n, err := wal.file.Write(data)
 		if err != nil {

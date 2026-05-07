@@ -2,66 +2,52 @@ package wal
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 )
 
-func encode(e *LogEntry) []byte {
+// Format:
+//
+// [4-byte length][json bytes]
 
-	event := []byte(e.Event)
-	payload := e.EventPayload
+func encode(e *LogEntry) ([]byte, error) {
+	payload, err := json.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
 
-	total := 16 + len(event) + len(payload)
+	total := 4 + len(payload)
+
 	buf := make([]byte, total)
 
-	binary.LittleEndian.PutUint32(buf[0:4], e.Term)
-	binary.LittleEndian.PutUint32(buf[4:8], e.LogIndex)
-	binary.LittleEndian.PutUint32(buf[8:12], uint32(len(event)))
-	binary.LittleEndian.PutUint32(buf[12:16], uint32(len(payload)))
+	// write payload length
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(payload)))
 
-	offset := 16
-	copy(buf[offset:], event)
-	offset += len(event)
+	// write json payload
+	copy(buf[4:], payload)
 
-	copy(buf[offset:], payload)
-	offset += len(payload)
-
-	return buf
+	return buf, nil
 }
 
 func decode(data []byte) (*LogEntry, error) {
-	if len(data) < 16 {
-		return nil, fmt.Errorf("invalid header")
+	if len(data) < 4 {
+		return nil, fmt.Errorf("invalid frame")
 	}
 
-	offset := 0
+	payloadLen := binary.LittleEndian.Uint32(data[0:4])
 
-	term := binary.LittleEndian.Uint32(data[offset:])
-	offset += 4
-
-	idx := binary.LittleEndian.Uint32(data[offset:])
-	offset += 4
-
-	eventLen := binary.LittleEndian.Uint32(data[offset:])
-	offset += 4
-
-	payloadLen := binary.LittleEndian.Uint32(data[offset:])
-	offset += 4
-
-	total := int(eventLen + payloadLen)
-	if len(data) < 16+total {
-		return nil, fmt.Errorf("incomplete entry")
+	if len(data) < 4+int(payloadLen) {
+		return nil, io.ErrUnexpectedEOF
 	}
 
-	event := string(data[offset : offset+int(eventLen)])
-	offset += int(eventLen)
+	payload := data[4 : 4+payloadLen]
 
-	payload := data[offset : offset+int(payloadLen)]
-	offset += int(payloadLen)
+	var entry LogEntry
 
-	return &LogEntry{
-		Term:         term,
-		LogIndex:     idx,
-		Event:        event,
-		EventPayload: payload,
-	}, nil
+	if err := json.Unmarshal(payload, &entry); err != nil {
+		return nil, err
+	}
+
+	return &entry, nil
 }
