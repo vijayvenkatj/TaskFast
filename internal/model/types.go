@@ -9,14 +9,34 @@ type Task struct {
 	RunAt   time.Time
 }
 
+type TaskStatus string
+
+const (
+	Ready      TaskStatus = "READY"
+	Delayed    TaskStatus = "DELAYED"
+	Processing TaskStatus = "PROCESSING"
+	DLQ        TaskStatus = "DLQ"
+)
+
 // TaskMeta - Server-side metadata for retries and limits
 type TaskMeta struct {
-	Task       *Task
-	MaxRetries uint32
-	Retries    uint32
+	Task *Task
+
+	Status TaskStatus
+
+	Retries    int
+	MaxRetries int
+
+	Lease *Lease
 }
 
 type FetchOptions struct {
 	WorkerID uint32
 	TaskTime time.Duration
+}
+
+type Lease struct {
+	WorkerID   uint32
+	TaskID     uint32
+	LeaseUntil time.Time
 }

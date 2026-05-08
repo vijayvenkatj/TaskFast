@@ -27,14 +27,14 @@ func (h *ScheduleHeap) Pop() any {
 }
 
 // Create Lease for the processing task
-func NewLease(workerID, taskID uint32, duration time.Duration) *Lease {
+func NewLease(workerID, taskID uint32, leaseUntil time.Time) *Lease {
 	return &Lease{
 		WorkerID:   workerID,
 		TaskID:     taskID,
-		LeaseUntil: time.Now().Add(duration),
+		LeaseUntil: leaseUntil,
 	}
 }
 
-func Backoff(base time.Duration, retries uint32) time.Duration {
+func Backoff(base time.Duration, retries int) time.Duration {
 	return base * time.Duration(1<<retries)
 }

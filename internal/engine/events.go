@@ -1,101 +1,73 @@
 package engine
 
 import (
-	"container/heap"
 	"errors"
-	"log"
-	"time"
 
 	"github.com/vijayvenkatj/taskfast/internal/model"
 )
 
-func (engine *EngineImpl) Apply(event *model.Event) (*Task, error) {
-
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
-
-	var taskMeta *TaskMeta
-	var task *Task
-
-	if event.Task != nil {
-		taskMeta = event.Task
-		if taskMeta != nil {
-			task = taskMeta.Task
-		}
-	}
-
-	var opts *FetchOptions
-	if event.Opts != nil {
-		opts = event.Opts
-	}
-
+func (engine *EngineImpl) Apply(event *model.Event) error {
 	switch event.Type {
-
 	case model.EnqueueEvent:
-
-		// Backpressure
-		if len(engine.ready)+len(engine.processing) > int(engine.limit) {
-			return nil, errors.New("system overloaded!")
+		if event.Enqueue == nil {
+			return errors.New("missing enqueue event data")
 		}
 
-		// Push the task into scheduled queue
+		task := event.Enqueue.Task
 		engine.tasks[task.ID] = &TaskMeta{
-			Task:       task,
-			Retries:    0,
-			MaxRetries: 1,
+			Task:       &task,
+			Status:     event.Enqueue.Status,
+			Retries:    event.Enqueue.Retries,
+			MaxRetries: event.Enqueue.MaxRetries,
+			Lease:      nil,
 		}
-		heap.Push(&engine.scheduled, task)
-		log.Println("Task", task.ID, "enqueued!")
 
 	case model.FetchEvent:
-
-		if len(engine.ready) == 0 {
-			return nil, nil
+		if event.Fetch == nil {
+			return errors.New("missing fetch event data")
 		}
 
-		task := engine.ready[0]
-		engine.ready = engine.ready[1:]
+		stored := engine.tasks[event.Fetch.TaskID]
+		if stored == nil {
+			return errors.New("task not found for fetch event")
+		}
 
-		lease := NewLease(opts.WorkerID, task.ID, opts.TaskTime)
-		engine.processing[task.ID] = lease
-		log.Println("Task", task.ID, "fetched!")
-
-		return task, nil
+		stored.Status = model.Processing
+		stored.Lease = &Lease{
+			WorkerID:   event.Fetch.WorkerID,
+			TaskID:     event.Fetch.TaskID,
+			LeaseUntil: event.Fetch.LeaseExpiry,
+		}
 
 	case model.AckEvent:
-		engine.completed = append(engine.completed, task)
-		delete(engine.processing, task.ID)
-
-		log.Println("Task", task.ID, "done!")
-
-	case model.FailEvent:
-
-		taskID := task.ID
-
-		// Remove it from processing.
-		delete(engine.processing, taskID)
-		log.Println("Task", taskID, "Failed: ", event.Err)
-
-		stored := engine.tasks[taskID]
-
-		// Add the Task back to delayed or DLQ based on retries.
-		if stored.Retries >= stored.MaxRetries {
-			log.Println("Task", taskID, "moved to DLQ")
-			engine.dlq = append(engine.dlq, task)
-			return nil, nil
+		if event.Ack == nil {
+			return errors.New("missing ack event data")
 		}
 
-		backoff := Backoff(50*time.Millisecond, stored.Retries)
-		task.RunAt = time.Now().Add(backoff)
-		stored.Retries += 1
+		delete(engine.tasks, event.Ack.TaskID)
 
-		log.Println("Task", taskID, "retried!")
-		heap.Push(&engine.scheduled, task)
+	case model.FailEvent:
+		if event.Fail == nil {
+			return errors.New("missing fail event data")
+		}
+
+		stored := engine.tasks[event.Fail.TaskID]
+		if stored == nil {
+			return errors.New("task not found for fail event")
+		}
+
+		stored.Retries = event.Fail.RetryCount
+		stored.Task.RunAt = event.Fail.RunAt
+		stored.Lease = nil
+		if event.Fail.MoveToDLQ {
+			stored.Status = model.DLQ
+		} else {
+			stored.Status = model.Delayed
+		}
 
 	default:
-		log.Println("Invalid EVENT")
-		return nil, nil
+		return errors.New("invalid event type")
 	}
 
-	return nil, nil
+	return nil
 }

@@ -2,13 +2,17 @@ package engine
 
 import (
 	"container/heap"
+	"log"
 	"time"
+
+	"github.com/vijayvenkatj/taskfast/internal/model"
 )
 
 // Reaper -> checks for expired leases.
 func (engine *EngineImpl) Reaper() {
 	for {
 		engine.mu.Lock()
+		now := time.Now()
 		for taskID, lease := range engine.processing {
 			taskMeta := engine.tasks[taskID]
 			if taskMeta == nil {
@@ -16,21 +20,49 @@ func (engine *EngineImpl) Reaper() {
 				continue
 			}
 
-			if time.Now().After(lease.LeaseUntil) {
-				// Remove it from processing.
+			if now.After(lease.LeaseUntil) {
+				moveToDLQ := taskMeta.Retries >= taskMeta.MaxRetries
+				retryCount := taskMeta.Retries
+				runAt := taskMeta.Task.RunAt
+				if !moveToDLQ {
+					backoff := Backoff(50*time.Millisecond, taskMeta.Retries)
+					runAt = now.Add(backoff)
+					retryCount = taskMeta.Retries + 1
+				}
+
+				event := model.Event{
+					Type: model.FailEvent,
+					Fail: &model.FailEventData{
+						TaskID:     taskID,
+						RetryCount: retryCount,
+						RunAt:      runAt,
+						MoveToDLQ:  moveToDLQ,
+						Error:      "lease expired",
+					},
+				}
+
+				if err := engine.wal.Append(event); err != nil {
+					log.Println("ERROR appending reaper event:", err)
+					continue
+				}
+
+				if err := engine.Apply(&event); err != nil {
+					log.Println("ERROR applying reaper event:", err)
+					continue
+				}
+
 				delete(engine.processing, taskID)
 
-				// Add the Task back to delayed or DLQ based on retries.
-				if taskMeta.Retries >= taskMeta.MaxRetries {
+				if moveToDLQ {
 					engine.dlq = append(engine.dlq, taskMeta.Task)
 					continue
 				}
 
-				backoff := Backoff(50*time.Millisecond, taskMeta.Retries)
-				taskMeta.Task.RunAt = time.Now().Add(backoff)
-				taskMeta.Retries += 1
-
-				heap.Push(&engine.scheduled, taskMeta.Task)
+				if runAt.After(now) {
+					heap.Push(&engine.scheduled, taskMeta.Task)
+				} else {
+					engine.ready = append(engine.ready, taskMeta.Task)
+				}
 			}
 		}
 		engine.mu.Unlock()
